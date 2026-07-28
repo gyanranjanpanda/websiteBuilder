@@ -1,5 +1,3 @@
-import dns from "dns"
-dns.setServers(["8.8.8.8", "8.8.4.4"])
 import express from "express"
 import dotenv from "dotenv"
 dotenv.config()
@@ -19,8 +17,14 @@ const port=process.env.PORT || 5000
 app.use(express.json())
 app.use(cookieParser())
 app.use(cors({
-    origin: [process.env.FRONTEND_URL, "https://websitebuilder-1-5z45.onrender.com", "https://websitebuilder-1-5z45.onrender.com"],
-    credentials:true
+    origin: [
+        process.env.FRONTEND_URL,
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "https://websitebuilder-1-5z45.onrender.com",
+        "https://websitebuilder-lpsa.onrender.com"
+    ].filter(Boolean),
+    credentials: true
 }))
 app.use("/api/auth",authRouter)
 app.use("/api/user",userRouter)
