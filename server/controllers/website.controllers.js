@@ -1,268 +1,164 @@
-import { generateResponse } from "../config/openRouter.js";
+import { generateResponse, generateStreamingResponse } from "../config/openRouter.js";
 import User from "../models/user.model.js";
 import Website from "../models/website.model.js";
 import extractJson from "../utils/extractJson.js";
 
+// ---------------------------------------------------------------------------
+// SSE helpers
+// ---------------------------------------------------------------------------
+
+function sseHeaders(res) {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable nginx buffering
+  res.flushHeaders();
+}
+
+function sseWrite(res, payload) {
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+// ---------------------------------------------------------------------------
+// Master prompt — concise but authoritative
+// ---------------------------------------------------------------------------
+
 const masterPrompt = `
-YOU ARE A PRINCIPAL FRONTEND ARCHITECT
-AND A SENIOR UI/UX ENGINEER
-SPECIALIZED IN RESPONSIVE DESIGN SYSTEMS.
+YOU ARE A PRINCIPAL FRONTEND ARCHITECT SPECIALIZED IN RESPONSIVE DESIGN SYSTEMS.
+BUILD A HIGH-END, PRODUCTION-GRADE SINGLE-PAGE APPLICATION USING ONLY HTML, CSS, AND JAVASCRIPT.
 
-YOU BUILD HIGH-END, REAL-WORLD, PRODUCTION-GRADE WEBSITES
-USING ONLY HTML, CSS, AND JAVASCRIPT
-THAT WORK PERFECTLY ON ALL SCREEN SIZES.
-
-THE OUTPUT MUST BE CLIENT-DELIVERABLE WITHOUT ANY MODIFICATION.
-
-❌ NO FRAMEWORKS
-❌ NO LIBRARIES
-❌ NO BASIC SITES
-❌ NO PLACEHOLDERS
-❌ NO NON-RESPONSIVE LAYOUTS
-
---------------------------------------------------
 USER REQUIREMENT:
 {USER_PROMPT}
---------------------------------------------------
 
-GLOBAL QUALITY BAR (NON-NEGOTIABLE)
---------------------------------------------------
-- Premium, modern UI (2026–2027)
+━━━ QUALITY BAR (NON-NEGOTIABLE) ━━━
+- Premium modern UI (2026–2027 aesthetic)
 - Professional typography & spacing
 - Clean visual hierarchy
-- Business-ready content (NO lorem ipsum)
-- Smooth transitions & hover effects
-- SPA-style multi-page experience
-- Production-ready, readable code
+- Business-ready real content (NO lorem ipsum)
+- Smooth transitions & micro-animations
+- SPA multi-page experience (Home / About / Services / Contact)
+- Fully responsive: mobile-first, works on 320px–1920px screens
 
---------------------------------------------------
-RESPONSIVE DESIGN (ABSOLUTE REQUIREMENT)
---------------------------------------------------
-THIS WEBSITE MUST BE FULLY RESPONSIVE.
+━━━ RESPONSIVE REQUIREMENTS ━━━
+- CSS Grid / Flexbox with relative units (%, rem, vw, vh)
+- Media queries for mobile (<768px), tablet (768–1024px), desktop (>1024px)
+- Hamburger nav on mobile
+- No horizontal scrolling on any screen size
+- Images: max-width:100%, height:auto, never overflow containers
 
-YOU MUST IMPLEMENT:
+━━━ IMAGES ━━━
+Use high-quality Unsplash images with real photo IDs, e.g.:
+https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80
 
-✔ Mobile-first CSS approach
-✔ Responsive layout for:
-  - Mobile (<768px)
-  - Tablet (768px–1024px)
-  - Desktop (>1024px)
-
-✔ Use:
-  - CSS Grid / Flexbox
-  - Relative units (%, rem, vw)
-  - Media queries
-
-✔ REQUIRED RESPONSIVE BEHAVIOR:
-  - Navbar collapses / stacks on mobile
-  - Sections stack vertically on mobile
-  - Multi-column layouts become single-column on small screens
-  - Images scale proportionally
-  - Text remains readable on all devices
-  - No horizontal scrolling on mobile
-  - Touch-friendly buttons on mobile
-
-IF THE WEBSITE IS NOT RESPONSIVE → RESPONSE IS INVALID.
-
---------------------------------------------------
-IMAGES (MANDATORY & RESPONSIVE)
---------------------------------------------------
-- Use high-quality images ONLY from Unsplash using real valid IDs, e.g.:
-  - https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80 (Food dish)
-  - https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1200&q=80 (Restaurant)
-  - https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=1200&q=80 (Pizza/Meal)
-  - https://images.unsplash.com/photo-1565958011703-44f9829ba187?auto=format&fit=crop&w=1200&q=80 (Delicious food)
-  - https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80 (Ambiance)
-
-- Images must:
-  - Be responsive (max-width: 100%, height: auto)
-  - Resize correctly on mobile
-  - Never overflow containers
-
---------------------------------------------------
-TECHNICAL RULES (VERY IMPORTANT)
---------------------------------------------------
-- Output ONE single HTML file
-- Exactly ONE <style> tag
-- Exactly ONE <script> tag
-- NO external CSS / JS / fonts
-- Use system fonts only
+━━━ TECHNICAL RULES ━━━
+- ONE .html file
+- ONE <style> tag — ONE <script> tag
+- NO external CSS / JS / fonts — system fonts only
 - iframe srcdoc compatible
-- SPA-style navigation using JavaScript
-- No page reloads
-- No dead UI
-- No broken buttons
---------------------------------------------------
-SPA VISIBILITY RULE (MANDATORY)
---------------------------------------------------
-- Pages MUST NOT be hidden permanently
-- If .page { display: none } is used,
-  then .page.active { display: block } is REQUIRED
-- At least ONE page MUST be visible on initial load
-- Hiding all content is INVALID
+- SPA navigation via JavaScript (no page reloads)
+- All buttons functional — no dead UI
+- If .page { display:none } → .page.active { display:block } REQUIRED
 
+━━━ OUTPUT ━━━
+Return RAW JSON only — no markdown, no explanation:
+{"message":"Short professional confirmation","code":"<FULL VALID HTML DOCUMENT>"}
+`.trim();
 
---------------------------------------------------
-REQUIRED SPA PAGES
---------------------------------------------------
-- Home
-- About
-- Services / Features
-- Contact
-
---------------------------------------------------
-FUNCTIONAL REQUIREMENTS
---------------------------------------------------
-- Navigation must switch pages using JS
-- Active nav state must update
-- Forms must have JS validation
-- Buttons must show hover + active states
-- Smooth section/page transitions
-
---------------------------------------------------
-FINAL SELF-CHECK (MANDATORY)
---------------------------------------------------
-BEFORE RESPONDING, ENSURE:
-
-1. Layout works on mobile, tablet, desktop
-2. No horizontal scroll on mobile
-3. All images are responsive
-4. All sections adapt properly
-5. Media queries are present and used
-6. Navigation works on all screen sizes
-7. At least ONE page is visible without user interaction
-
-IF ANY CHECK FAILS → RESPONSE IS INVALID
-
---------------------------------------------------
-OUTPUT FORMAT (RAW JSON ONLY)
---------------------------------------------------
-{
-  "message": "Short professional confirmation sentence",
-  "code": "<FULL VALID HTML DOCUMENT>"
-}
-
---------------------------------------------------
-ABSOLUTE RULES
---------------------------------------------------
-- RETURN RAW JSON ONLY
-- NO markdown
-- NO explanations
-- NO extra text
-- FORMAT MUST MATCH EXACTLY
-- IF FORMAT IS BROKEN → RESPONSE IS INVALID
-`;
-
+// ---------------------------------------------------------------------------
+// Generate website (streaming SSE)
+// ---------------------------------------------------------------------------
 
 export const generateWebsite = async (req, res) => {
-    try {
-        const { prompt } = req.body
-        if (!prompt) {
-            return res.status(400).json({ message: "prompt is required" })
-        }
-        const user = await User.findById(req.user._id)
+  const { prompt } = req.body;
+  if (!prompt) return res.status(400).json({ message: "prompt is required" });
 
-        if (!user) {
-            return res.status(400).json({ message: "user not found" })
-        }
-        if (user.credits < 50) {
-            return res.status(400).json({ message: "you have not enough credits to generate a webiste" })
-        }
+  const user = await User.findById(req.user._id);
+  if (!user) return res.status(400).json({ message: "user not found" });
+  if (user.credits < 50) return res.status(400).json({ message: "not enough credits to generate a website" });
 
-        const finalPrompt = masterPrompt.replace("USER_PROMPT", prompt)
-        let raw = ""
-        let parsed = null
-        for (let i = 0; i < 2 && !parsed; i++) {
-            raw = await generateResponse(finalPrompt)
-            parsed = await extractJson(raw)
+  // Switch to SSE mode
+  sseHeaders(res);
 
-            if (!parsed) {
-                raw = await generateResponse(finalPrompt + "\n\nRETURN ONLY RAW JSON.")
-                parsed = await extractJson(raw)
-            }
+  try {
+    const finalPrompt = masterPrompt.replace("{USER_PROMPT}", prompt);
 
-        }
+    sseWrite(res, { type: "status", message: "Generating your website…" });
 
-        if (!parsed || !parsed.code) {
-            console.log("ai returned invalid response", raw)
-            return res.status(400).json({ message: "ai returned invalid response" })
-        }
+    // Stream from AI — accumulate full text
+    let rawText = await generateStreamingResponse(finalPrompt, (chunk) => {
+      sseWrite(res, { type: "chunk", content: chunk });
+    });
 
-        const website = await Website.create({
-            user: user._id,
-            title: prompt.slice(0, 60),
-            latestCode: parsed.code,
-            conversation: [
-                {
-                    role: "user",
-                    content: prompt
-                },
-                {
-                    role: "ai",
-                    content: parsed.message
-                }
-                
-            ]
-        })
+    // Parse the JSON response
+    let parsed = await extractJson(rawText);
 
-        user.credits = user.credits - 50
-        await user.save()
-
-        return res.status(201).json({
-            websiteId: website._id,
-            remainingCredits: user.credits
-        })
-
-    } catch (error) {
-        return res.status(500).json({ message: `generate website error ${error}` })
+    // Single retry if JSON parse failed (not a double-call loop)
+    if (!parsed) {
+      sseWrite(res, { type: "status", message: "Refining output…" });
+      rawText = await generateResponse(finalPrompt + "\n\nRETURN ONLY RAW JSON. No markdown.");
+      parsed = await extractJson(rawText);
     }
-}
 
-
-export const getWebsiteById = async (req, res) => {
-    try {
-        const website = await Website.findOne({
-            _id: req.params.id,
-            user: req.user._id
-        })
-
-        if (!website) {
-            return res.status(400).json({ message: "website not found" })
-        }
-        return res.status(200).json(website)
-    } catch (error) {
-        return res.status(500).json({ message: `get website by id error ${error}` })
+    if (!parsed?.code) {
+      console.error("[generate] AI returned invalid JSON:", rawText?.slice(0, 200));
+      sseWrite(res, { type: "error", message: "AI returned an invalid response. Please try again." });
+      return res.end();
     }
-}
 
+    // Save to DB
+    const website = await Website.create({
+      user: user._id,
+      title: prompt.slice(0, 60),
+      latestCode: parsed.code,
+      conversation: [
+        { role: "user", content: prompt },
+        { role: "ai", content: parsed.message },
+      ],
+    });
+
+    user.credits -= 50;
+    await user.save();
+
+    sseWrite(res, {
+      type: "done",
+      websiteId: website._id,
+      message: parsed.message,
+      remainingCredits: user.credits,
+    });
+
+    res.end();
+  } catch (error) {
+    console.error("[generate] error:", error);
+    sseWrite(res, { type: "error", message: `Generation failed: ${error.message}` });
+    res.end();
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Update / change existing website (streaming SSE)
+// ---------------------------------------------------------------------------
 
 export const changes = async (req, res) => {
-    try {
-        const { prompt } = req.body
-        if (!prompt) {
-            return res.status(400).json({ message: "prompt is required" })
-        }
+  const { prompt } = req.body;
+  if (!prompt) return res.status(400).json({ message: "prompt is required" });
 
-        const website = await Website.findOne({
-            _id: req.params.id,
-            user: req.user._id
-        })
+  const [website, user] = await Promise.all([
+    Website.findOne({ _id: req.params.id, user: req.user._id }),
+    User.findById(req.user._id),
+  ]);
 
-        if (!website) {
-            return res.status(400).json({ message: "website not found" })
-        }
+  if (!website) return res.status(400).json({ message: "website not found" });
+  if (!user) return res.status(400).json({ message: "user not found" });
+  if (user.credits < 25) return res.status(400).json({ message: "not enough credits to update this website" });
 
-        const user = await User.findById(req.user._id)
+  // Switch to SSE mode
+  sseHeaders(res);
 
-        if (!user) {
-            return res.status(400).json({ message: "user not found" })
-        }
-        if (user.credits < 25) {
-            return res.status(400).json({ message: "you have not enough credits to generate a webiste" })
-        }
-
-        const updatePrompt = `
-UPDATE THIS HTML WEBSITE.
+  try {
+    // Send only the current HTML, not the entire conversation history
+    const updatePrompt = `
+UPDATE THIS HTML WEBSITE BASED ON THE USER REQUEST.
+Keep all existing sections. Only apply the requested change.
 
 CURRENT CODE:
 ${website.latestCode}
@@ -270,107 +166,104 @@ ${website.latestCode}
 USER REQUEST:
 ${prompt}
 
-RETURN RAW JSON ONLY:
-{
-  "message": "Short confirmation",
-  "code": "<UPDATED FULL HTML>"
-}
-`
-        let raw = ""
-        let parsed = null
-        for (let i = 0; i < 2 && !parsed; i++) {
-            raw = await generateResponse(updatePrompt)
-            parsed = await extractJson(raw)
+Return RAW JSON only:
+{"message":"Short confirmation of what was changed","code":"<UPDATED FULL HTML DOCUMENT>"}
+`.trim();
 
-            if (!parsed) {
-                raw = await generateResponse(updatePrompt + "\n\nRETURN ONLY RAW JSON.")
-                parsed = await extractJson(raw)
-            }
+    sseWrite(res, { type: "status", message: "Applying your changes…" });
 
-        }
+    let rawText = await generateStreamingResponse(updatePrompt, (chunk) => {
+      sseWrite(res, { type: "chunk", content: chunk });
+    });
 
-        if (!parsed.code) {
-            console.log("ai returned invalid response", raw)
-            return res.status(400).json({ message: "ai returned invalid response" })
-        }
+    let parsed = await extractJson(rawText);
 
-
-        website.conversation.push(
-            { role: "user", content: prompt },
-            { role: "ai", content: parsed.message },
-        )
-
-        website.latestCode = parsed.code
-
-        await website.save()
-        user.credits = user.credits - 25
-        await user.save()
-
-        return res.status(200).json({
-            message:parsed.message,
-            code:parsed.code,
-            remainingCredits: user.credits
-        })
-
-
-    } catch (error) {
-        console.log(error)
- return res.status(500).json({ message: `update website error ${error}` })
+    // Single retry
+    if (!parsed) {
+      sseWrite(res, { type: "status", message: "Refining output…" });
+      rawText = await generateResponse(updatePrompt + "\n\nRETURN ONLY RAW JSON.");
+      parsed = await extractJson(rawText);
     }
-}
 
-
-
-export const getAll=async (req,res) => {
-    try {
-        const websites=await Website.find({user:req.user._id})
-        return res.status(200).json(websites)
-    } catch (error) {
-        return res.status(500).json({ message: `get all websites error ${error}` })
+    if (!parsed?.code) {
+      console.error("[changes] AI returned invalid JSON:", rawText?.slice(0, 200));
+      sseWrite(res, { type: "error", message: "AI returned an invalid response. Please try again." });
+      return res.end();
     }
-}
 
+    website.conversation.push(
+      { role: "user", content: prompt },
+      { role: "ai", content: parsed.message }
+    );
+    website.latestCode = parsed.code;
 
-export const deploy=async (req,res)=>{
-    try {
-         const website = await Website.findOne({
-            _id: req.params.id,
-            user: req.user._id
-        })
+    await Promise.all([website.save(), (user.credits -= 25, user.save())]);
 
-        if (!website) {
-            return res.status(400).json({ message: "website not found" })
-        }
+    sseWrite(res, {
+      type: "done",
+      message: parsed.message,
+      code: parsed.code,
+      remainingCredits: user.credits,
+    });
 
-        if(!website.slug){
-            website.slug=website.title.toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,60)+website._id.toString().slice(-5)              
-        }
+    res.end();
+  } catch (error) {
+    console.error("[changes] error:", error);
+    sseWrite(res, { type: "error", message: `Update failed: ${error.message}` });
+    res.end();
+  }
+};
 
-        website.deployed=true
-        website.deployUrl=`${process.env.FRONTEND_URL}/site/${website.slug}`
-        await website.save()
+// ---------------------------------------------------------------------------
+// Read-only endpoints (unchanged)
+// ---------------------------------------------------------------------------
 
-        return res.status(200).json({
-            url:website.deployUrl
-        })
+export const getWebsiteById = async (req, res) => {
+  try {
+    const website = await Website.findOne({ _id: req.params.id, user: req.user._id });
+    if (!website) return res.status(400).json({ message: "website not found" });
+    return res.status(200).json(website);
+  } catch (error) {
+    return res.status(500).json({ message: `get website by id error ${error}` });
+  }
+};
 
-    } catch (error) {
-         return res.status(500).json({ message: `deploy website error ${error}` })
+export const getAll = async (req, res) => {
+  try {
+    const websites = await Website.find({ user: req.user._id });
+    return res.status(200).json(websites);
+  } catch (error) {
+    return res.status(500).json({ message: `get all websites error ${error}` });
+  }
+};
+
+export const deploy = async (req, res) => {
+  try {
+    const website = await Website.findOne({ _id: req.params.id, user: req.user._id });
+    if (!website) return res.status(400).json({ message: "website not found" });
+
+    if (!website.slug) {
+      website.slug =
+        website.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60) +
+        website._id.toString().slice(-5);
     }
-}
 
+    website.deployed = true;
+    website.deployUrl = `${process.env.FRONTEND_URL}/site/${website.slug}`;
+    await website.save();
 
-export const getBySlug=async (req,res) => {
-    try {
-         const website = await Website.findOne({
-            slug: req.params.slug
-        })
+    return res.status(200).json({ url: website.deployUrl });
+  } catch (error) {
+    return res.status(500).json({ message: `deploy website error ${error}` });
+  }
+};
 
-        if (!website) {
-            return res.status(400).json({ message: "website not found" })
-        }
-          return res.status(200).json(website)
-    } catch (error) {
-        return res.status(500).json({ message: `get by slug website error ${error}` })
-    }
-}
+export const getBySlug = async (req, res) => {
+  try {
+    const website = await Website.findOne({ slug: req.params.slug });
+    if (!website) return res.status(400).json({ message: "website not found" });
+    return res.status(200).json(website);
+  } catch (error) {
+    return res.status(500).json({ message: `get by slug website error ${error}` });
+  }
+};

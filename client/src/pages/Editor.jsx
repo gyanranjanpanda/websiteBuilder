@@ -1,13 +1,9 @@
 import axios from 'axios'
-import React from 'react'
-import { useEffect } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { serverUrl } from '../App'
-import { useState } from 'react'
-import { ArrowLeft, Code, Code2, MessageCircle, MessageSquare, Monitor, Rocket, Send, X } from 'lucide-react'
-import { useRef } from 'react'
+import { Code2, MessageSquare, Monitor, Rocket, Send, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-
 import Editor from '@monaco-editor/react';
 function WebsiteEditor() {
     const { id } = useParams()
@@ -18,32 +14,78 @@ function WebsiteEditor() {
     const [prompt, setPrompt] = useState("")
     const iframeRef = useRef(null)
     const [updateLoading, setUpdateLoading] = useState(false)
-    const [thinkingIndex, setThinkingIndex] = useState(0)
+    const [streamedChars, setStreamedChars] = useState(0)
     const [showCode, setShowCode] = useState(false)
     const [showFullPreview, setShowFullPreview] = useState(false)
     const [showChat, setShowChat] = useState(false)
-    const thinkingSteps = [
-        "Understanding your request…",
-        "Planning layout changes…",
-        "Improving responsiveness…",
-        "Applying animations…",
-        "Finalizing update…",
-    ]
+    const updateAbortRef = useRef(null)
+
     const handleUpdate = async () => {
-        if (!prompt) return
+        if (!prompt || updateLoading) return
         setUpdateLoading(true)
+        setStreamedChars(0)
         const text = prompt
         setPrompt("")
-        setMessages((m) => [...m, { role: "user", content: prompt }])
+        setMessages((m) => [...m, { role: "user", content: text }])
+
         try {
-            const result = await axios.post(`${serverUrl}/api/website/update/${id}`, { prompt: text }, { withCredentials: true })
-            console.log(result)
+            const controller = new AbortController()
+            updateAbortRef.current = controller
+
+            const res = await fetch(`${serverUrl}/api/website/update/${id}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ prompt: text }),
+                signal: controller.signal,
+            })
+
+            if (!res.ok) {
+                const errData = await res.json()
+                throw new Error(errData.message || "Update failed")
+            }
+
+            const reader = res.body.getReader()
+            const decoder = new TextDecoder()
+            let buffer = ""
+            let accumulatedCode = ""
+
+            while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+
+                buffer += decoder.decode(value, { stream: true })
+                const lines = buffer.split("\n")
+                buffer = lines.pop()
+
+                for (const line of lines) {
+                    const trimmed = line.trim()
+                    if (!trimmed.startsWith("data:")) continue
+                    try {
+                        const payload = JSON.parse(trimmed.slice(5).trim())
+
+                        if (payload.type === "chunk") {
+                            setStreamedChars((prev) => prev + (payload.content?.length || 0))
+                        }
+
+                        if (payload.type === "done") {
+                            setUpdateLoading(false)
+                            setMessages((m) => [...m, { role: "ai", content: payload.message }])
+                            setCode(payload.code)
+                            return
+                        }
+
+                        if (payload.type === "error") {
+                            throw new Error(payload.message)
+                        }
+                    } catch {
+                        // malformed SSE line
+                    }
+                }
+            }
+        } catch (err) {
+            if (err.name !== "AbortError") console.error("[update]", err)
             setUpdateLoading(false)
-            setMessages((m) => [...m, { role: "ai", content: result.data.message }])
-            setCode(result.data.code)
-        } catch (error) {
-            setUpdateLoading(false)
-            console.log(error)
         }
     }
 
@@ -58,14 +100,8 @@ function WebsiteEditor() {
         }
 
 
-    useEffect(() => {
-        if (!updateLoading) return;
-        const i = setInterval(() => {
-            setThinkingIndex((i) => (i + 1) % thinkingSteps.length)
-        }, 1200)
-
-        return () => clearInterval(i)
-    }, [updateLoading])
+    // Cancel in-flight update on unmount
+    useEffect(() => () => updateAbortRef.current?.abort(), [])
 
     useEffect(() => {
         const handleGetWebsite = async () => {
@@ -136,9 +172,10 @@ function WebsiteEditor() {
                         ))}
 
                         {updateLoading &&
-
                             <div className='max-w-[85%] mr-auto'>
-                                <div className='px-4 py-2.5 rounded-2xl text-xs bg-white/5 border border-white/10 text-zinc-400 italic'>{thinkingSteps[thinkingIndex]}</div>
+                                <div className='px-4 py-2.5 rounded-2xl text-xs bg-white/5 border border-white/10 text-zinc-400 italic'>
+                                    {streamedChars > 0 ? `Generating… ${streamedChars.toLocaleString()} chars` : "Connecting to AI…"}
+                                </div>
                             </div>}
 
 
@@ -207,9 +244,10 @@ function WebsiteEditor() {
                         ))}
 
                         {updateLoading &&
-
                             <div className='max-w-[85%] mr-auto'>
-                                <div className='px-4 py-2.5 rounded-2xl text-xs bg-white/5 border border-white/10 text-zinc-400 italic'>{thinkingSteps[thinkingIndex]}</div>
+                                <div className='px-4 py-2.5 rounded-2xl text-xs bg-white/5 border border-white/10 text-zinc-400 italic'>
+                                    {streamedChars > 0 ? `Generating… ${streamedChars.toLocaleString()} chars` : "Connecting to AI…"}
+                                </div>
                             </div>}
 
 

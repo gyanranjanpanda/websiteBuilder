@@ -10,6 +10,7 @@ import LiveSite from './pages/LiveSite'
 import Pricing from './pages/Pricing'
 
 export const serverUrl="https://websitebuilder-lpsa.onrender.com"
+
 function App() {
   useGetCurrentUser()
   const {userData}=useSelector(state=>state.user)
