@@ -63,37 +63,33 @@ function Generate() {
           const trimmed = line.trim()
           if (!trimmed.startsWith("data:")) continue
 
+          let payload
           try {
-            const payload = JSON.parse(trimmed.slice(5).trim())
+            payload = JSON.parse(trimmed.slice(5).trim())
+          } catch {
+            continue // genuinely malformed SSE line — skip
+          }
 
-            if (payload.type === "chunk") {
-              // Count streamed characters to drive real progress
-              setStreamedChars((prev) => {
-                const next = prev + (payload.content?.length || 0)
-                // Rough estimate: a full website is ~8000 chars; cap at 90%
-                const pct = Math.min(90, Math.floor((next / 8000) * 90))
-                setProgress(pct)
-                setPhaseIndex(Math.min(PHASES.length - 1, Math.floor((pct / 90) * (PHASES.length - 1))))
-                return next
-              })
-            }
+          if (payload.type === "chunk") {
+            setStreamedChars((prev) => {
+              const next = prev + (payload.content?.length || 0)
+              const pct = Math.min(90, Math.floor((next / 8000) * 90))
+              setProgress(pct)
+              setPhaseIndex(Math.min(PHASES.length - 1, Math.floor((pct / 90) * (PHASES.length - 1))))
+              return next
+            })
+          }
 
-            if (payload.type === "status") {
-              // Server-driven status messages — no-op (phases handle display)
-            }
+          if (payload.type === "done") {
+            setProgress(100)
+            setLoading(false)
+            navigate(`/editor/${payload.websiteId}`)
+            return
+          }
 
-            if (payload.type === "done") {
-              setProgress(100)
-              setLoading(false)
-              navigate(`/editor/${payload.websiteId}`)
-              return
-            }
-
-            if (payload.type === "error") {
-              throw new Error(payload.message)
-            }
-          } catch (parseErr) {
-            // Malformed SSE line — skip
+          if (payload.type === "error") {
+            // Error from server — surface it to the user
+            throw new Error(payload.message)
           }
         }
       }

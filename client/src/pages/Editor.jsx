@@ -61,27 +61,30 @@ function WebsiteEditor() {
                 for (const line of lines) {
                     const trimmed = line.trim()
                     if (!trimmed.startsWith("data:")) continue
+
+                    let payload
                     try {
-                        const payload = JSON.parse(trimmed.slice(5).trim())
-
-                        if (payload.type === "chunk") {
-                            setStreamedChars((prev) => prev + (payload.content?.length || 0))
-                        }
-
-                        if (payload.type === "done") {
-                            setUpdateLoading(false)
-                            setMessages((m) => [...m, { role: "ai", content: payload.message }])
-                            setCode(payload.code)
-                            return
-                        }
-
-                        if (payload.type === "error") {
-                            throw new Error(payload.message)
-                        }
+                        payload = JSON.parse(trimmed.slice(5).trim())
                     } catch {
-                        // malformed SSE line
+                        continue // genuinely malformed line
+                    }
+
+                    if (payload.type === "chunk") {
+                        setStreamedChars((prev) => prev + (payload.content?.length || 0))
+                    }
+
+                    if (payload.type === "done") {
+                        setUpdateLoading(false)
+                        setMessages((m) => [...m, { role: "ai", content: payload.message }])
+                        setCode(payload.code)
+                        return
+                    }
+
+                    if (payload.type === "error") {
+                        throw new Error(payload.message)
                     }
                 }
+
             }
         } catch (err) {
             if (err.name !== "AbortError") console.error("[update]", err)
